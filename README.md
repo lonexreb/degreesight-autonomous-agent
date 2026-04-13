@@ -34,8 +34,8 @@ pipx install morningstar-agent
 Or from source:
 
 ```bash
-git clone https://github.com/lonexreb/degreesight-autonomous-agent.git
-cd degreesight-autonomous-agent
+git clone https://github.com/lonexreb/morningstar.git
+cd morningstar
 pip install -e .
 ```
 
@@ -76,6 +76,9 @@ morningstar run -n "notion-page-id" -r /path/to/repo
 | `--max-tasks` | | `20` | Maximum tasks to generate |
 | `--dry-run` | | `false` | Fetch PRD + generate tasks without executing |
 | `--yes` | `-y` | `false` | Skip confirmation prompt |
+| `--slack-bot-token` | | env var | Bot token for two-way Slack Q&A (`MORNINGSTAR_SLACK_BOT_TOKEN`) |
+| `--slack-channel` | | env var | Channel ID for questions (`MORNINGSTAR_SLACK_CHANNEL`) |
+| `--question-timeout` | | `300` | Seconds to wait for Slack answer (30-1800) |
 
 ---
 
@@ -94,6 +97,7 @@ morningstar run -n "notion-page-id" -r /path/to/repo
                           - Implement code changes
                           - Write/update tests
                           - Run tests, fix failures
+                          - If stuck, ask question in Slack and wait for answer
                           - Git commit
                           - Post to Slack
                         |
@@ -144,6 +148,7 @@ All agent output is saved to `<repo>/.agent-logs/`:
 | `tasks.json` | Generated task list |
 | `task-<id>.json` | Claude's full output per task |
 | `task-<id>-retry.json` | Retry output (if task failed first attempt) |
+| `task-<id>-answer.json` | Follow-up output after Slack Q&A |
 
 ---
 
@@ -164,6 +169,8 @@ pytest
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
 | `MORNINGSTAR_SLACK_WEBHOOK` | No | Slack webhook (alternative to CLI flag) |
+| `MORNINGSTAR_SLACK_BOT_TOKEN` | No | Bot token for two-way Q&A (`xoxb-...`) |
+| `MORNINGSTAR_SLACK_CHANNEL` | No | Channel ID for posting questions |
 
 The Claude Code CLI must be authenticated (`claude auth login`).
 

@@ -68,6 +68,7 @@ Contains all Claude CLI interaction, Slack posting, git operations, and validati
 | Task generation | `generate_tasks()` | `Read,Glob,Grep` | $3 | Target repo |
 | Task execution | `execute_task()` | `Read,Write,Edit,Bash,Glob,Grep` | Configurable | Target repo |
 | Retry | `_run_claude()` | Same as execution | $3 | Target repo |
+| Q&A follow-up | `_run_claude()` + `--resume` | Same as execution | $3 | Target repo |
 
 **No function has broader access than it needs.** PRD fetch runs in a temp directory with read-only tools to prevent a malicious Notion page from accessing the filesystem. Task generation can read the codebase but cannot modify it. Only execution gets write and shell access.
 
@@ -152,6 +153,23 @@ claude -p "Implement this task: {title}\n{description}\n{acceptance_criteria}"
   v
 JSON response: { result: "...", is_error: bool, total_cost_usd, session_id }
   |
+  +--> If result contains QUESTION: block AND bot_token provided:
+  |      |
+  |      v
+  |    parse_question_block(result) -> (question, context, default)
+  |      |
+  |      v
+  |    slack_post_and_get_reply(bot_token, channel, question)
+  |      - POST chat.postMessage -> get thread ts
+  |      - Poll conversations.replies every 30s
+  |      - Timeout after question_timeout seconds
+  |      |
+  |      +--> If human replies:
+  |      |      claude -p "Answer: {reply}" --resume <session_id>
+  |      |      Written to: .agent-logs/task-{id}-answer.json
+  |      |
+  |      +--> If timeout: log and proceed with DEFAULT
+  |
   +--> If is_error AND session_id valid:
   |      |
   |      v
@@ -180,6 +198,7 @@ RunState.cost = 0.0
   For each task:
     Check: state.cost >= budget? -> STOP
     += execute_task cost  (~$1-5 per task)
+      += Q&A follow-up    (~$1-3 if question answered)
       += retry cost       (~$1-3 if retry)
   Final: state.cost = total across all phases
 ```

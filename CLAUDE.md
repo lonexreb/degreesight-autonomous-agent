@@ -7,7 +7,7 @@ Autonomous coding agent that reads a PRD from Notion, analyzes a codebase, gener
 - Python 3.10+ with `typer` + `rich`
 - Claude Code CLI (headless mode via `-p`)
 - Notion MCP for PRD ingestion
-- Slack webhooks for status updates
+- Slack webhooks for status updates + bot token for two-way Q&A
 
 ## Install
 
@@ -38,7 +38,9 @@ src/morningstar/
 
 - `TaskResult` is frozen (immutable). `RunState` is mutable (accumulated in the loop).
 - All Claude CLI calls go through `_run_claude()` in engine.py
-- Slack posts go through `slack_post()` in engine.py
+- One-way Slack posts go through `slack_post()` (webhook)
+- Two-way Slack Q&A goes through `slack_post_and_get_reply()` (bot token + polling)
+- Question detection via `parse_question_block()` regex on Claude output
 - Logs written to `<target-repo>/.agent-logs/`
 - Budget tracked via `RunState.cost` -- includes PRD fetch + task gen + execution
 - All user-supplied inputs are validated before use (model allowlist, webhook URL, task IDs)

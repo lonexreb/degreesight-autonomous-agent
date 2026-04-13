@@ -214,8 +214,10 @@ morningstar run [OPTIONS]
 | Flag | Short | Env Var | Description |
 |------|-------|---------|-------------|
 | `--slack-webhook` | `-s` | `MORNINGSTAR_SLACK_WEBHOOK` | Slack incoming webhook URL |
+| `--slack-bot-token` | | `MORNINGSTAR_SLACK_BOT_TOKEN` | Bot token (`xoxb-...`) for two-way Q&A |
+| `--slack-channel` | | `MORNINGSTAR_SLACK_CHANNEL` | Channel ID for posting questions |
 
-Using the environment variable is recommended to avoid exposing the webhook in shell history and process listings.
+Using environment variables is recommended to avoid exposing secrets in shell history and process listings.
 
 #### Configuration Options
 
@@ -225,6 +227,7 @@ Using the environment variable is recommended to avoid exposing the webhook in s
 | `--budget` | `-b` | `50.00` | Total USD budget for the entire run |
 | `--task-budget` | | `5.00` | Maximum USD per individual task |
 | `--max-tasks` | | `20` | Maximum number of tasks to generate (1-100) |
+| `--question-timeout` | | `300` | Seconds to wait for Slack answer (30-1800) |
 
 #### Control Options
 
@@ -319,6 +322,47 @@ morningstar run -n "..." -r /repo -s "https://hooks.slack.com/services/T.../B...
 ```
 
 The environment variable approach keeps the webhook URL out of your shell history and process listings.
+
+### Two-Way Slack (Q&A)
+
+If the agent needs a decision during task execution, it can ask a question in Slack and wait for your answer.
+
+**Setup:**
+
+1. Create a Slack App at [api.slack.com/apps](https://api.slack.com/apps)
+2. Add Bot Token Scopes: `chat:write`, `channels:history`, `groups:history`
+3. Install the app to your workspace
+4. Copy the Bot User OAuth Token (`xoxb-...`)
+5. Find your channel ID (right-click channel > "View channel details" > ID at bottom)
+
+```bash
+export MORNINGSTAR_SLACK_BOT_TOKEN="xoxb-..."
+export MORNINGSTAR_SLACK_CHANNEL="C0A2DMV8JNB"
+morningstar run -n "..." -r /repo
+```
+
+**How it works:**
+
+1. During task execution, Claude outputs a `QUESTION:` block when it needs input
+2. MorningStar posts the question to your Slack channel
+3. It polls for a reply every 30 seconds (up to `--question-timeout`, default 5 min)
+4. When you reply in the thread, the agent reads your answer and continues
+5. If you don't reply in time, it proceeds with the default action
+
+**Example Slack thread:**
+
+```
+Bot: "Implement auth module" needs input:
+  > Should the API use JWT or session-based auth?
+  Context: Both are supported by the framework.
+  Default (if no reply in 5min): JWT
+
+You: Use JWT with refresh tokens
+
+Bot: [continues implementation with JWT + refresh tokens]
+```
+
+**Without bot token**: Questions are still posted to the webhook for visibility, but the agent proceeds immediately with the default -- no waiting.
 
 ---
 
