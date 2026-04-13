@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import typer
 from rich.console import Console
-from rich.live import Live
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
-from rich.text import Text
 
 from morningstar import __version__
 from morningstar.banner import print_banner
@@ -21,6 +18,8 @@ from morningstar.engine import (
     fetch_prd,
     generate_tasks,
     slack_post,
+    validate_model,
+    validate_slack_webhook,
 )
 
 app = typer.Typer(
@@ -32,29 +31,6 @@ app = typer.Typer(
 console = Console()
 
 
-def _status_panel(state: RunState, total: int, current_task: str = "") -> Panel:
-    """Build a live status panel."""
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column(style="dim")
-    table.add_column(style="bold")
-
-    done = state.completed + state.failed
-    table.add_row("Progress", f"{done}/{total} tasks")
-    table.add_row("Completed", f"[green]{state.completed}[/green]")
-    table.add_row("Failed", f"[red]{state.failed}[/red]")
-    table.add_row("Cost", f"[yellow]${state.cost:.2f}[/yellow]")
-
-    if current_task:
-        table.add_row("Current", f"[cyan]{current_task}[/cyan]")
-
-    return Panel(
-        table,
-        title="[bold bright_yellow]MorningStar[/bold bright_yellow]",
-        border_style="bright_yellow",
-        padding=(1, 2),
-    )
-
-
 @app.command()
 def run(
     notion_url: str = typer.Option(
@@ -64,10 +40,11 @@ def run(
         help="Notion page URL or ID containing the PRD.",
     ),
     slack_webhook: str = typer.Option(
-        ...,
+        None,
         "--slack-webhook",
         "-s",
-        help="Slack incoming webhook URL for status updates.",
+        envvar="MORNINGSTAR_SLACK_WEBHOOK",
+        help="Slack webhook URL. Prefer env var MORNINGSTAR_SLACK_WEBHOOK.",
     ),
     repo: Path = typer.Option(
         ...,
@@ -83,18 +60,38 @@ def run(
         "sonnet",
         "--model",
         "-m",
-        help="Claude model to use.",
+        help="Claude model (sonnet, opus, haiku).",
     ),
     budget: float = typer.Option(
         50.0,
         "--budget",
         "-b",
+        min=0.01,
         help="Total USD budget for the run.",
     ),
     budget_per_task: float = typer.Option(
         5.0,
         "--task-budget",
+        min=0.01,
         help="Max USD per task.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Fetch PRD and generate tasks, but do not execute.",
+    ),
+    max_tasks: int = typer.Option(
+        20,
+        "--max-tasks",
+        min=1,
+        max=100,
+        help="Maximum number of tasks to generate.",
     ),
 ) -> None:
     """Run the autonomous coding agent.
@@ -104,8 +101,27 @@ def run(
     """
     print_banner(console)
 
-    repo_path = repo.resolve()
-    log_dir = repo_path / ".agent-logs"
+    # ── Validate inputs ───────────────────────────────────────────
+    if not slack_webhook:
+        console.print(
+            "[bold red]Error:[/bold red] --slack-webhook is required. "
+            "Set MORNINGSTAR_SLACK_WEBHOOK env var or pass --slack-webhook."
+        )
+        raise typer.Exit(1)
+
+    try:
+        validate_model(model)
+    except ValueError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(1)
+
+    try:
+        validate_slack_webhook(slack_webhook)
+    except ValueError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(1)
+
+    log_dir = repo / ".agent-logs"
     log_dir.mkdir(exist_ok=True)
 
     state = RunState()
@@ -114,33 +130,31 @@ def run(
     with console.status("[bold yellow]Fetching PRD from Notion...", spinner="star"):
         slack_post(slack_webhook, "MorningStar started. Reading PRD from Notion...")
         try:
-            prd_text = fetch_prd(
+            prd_text, prd_cost = fetch_prd(
                 notion_url,
                 model=model,
                 log_dir=log_dir,
-                console=console,
             )
+            state.cost += prd_cost
         except RuntimeError as e:
             console.print(f"[bold red]Error:[/bold red] {e}")
             slack_post(slack_webhook, f"MorningStar failed: {e}")
             raise typer.Exit(1)
 
-    lines = prd_text.count("\n") + 1
-    console.print(
-        f"  [green]PRD fetched[/green] ({lines} lines)",
-    )
+    console.print(f"  [green]PRD fetched[/green] ({prd_text.count(chr(10)) + 1} lines, ${prd_cost:.2f})")
 
     # ── Step 2: Generate tasks ────────────────────────────────────
     with console.status("[bold yellow]Analyzing codebase & generating tasks...", spinner="star"):
         slack_post(slack_webhook, "PRD loaded. Analyzing codebase...")
         try:
-            tasks = generate_tasks(
+            tasks, tasks_cost = generate_tasks(
                 prd_text,
-                repo_path=repo_path,
+                repo_path=repo,
                 model=model,
                 log_dir=log_dir,
-                console=console,
+                max_tasks=max_tasks,
             )
+            state.cost += tasks_cost
         except RuntimeError as e:
             console.print(f"[bold red]Error:[/bold red] {e}")
             slack_post(slack_webhook, f"MorningStar failed: {e}")
@@ -148,7 +162,7 @@ def run(
 
     task_count = len(tasks)
     state.tasks = tasks
-    console.print(f"  [green]Generated {task_count} tasks[/green]")
+    console.print(f"  [green]Generated {task_count} tasks[/green] (${tasks_cost:.2f})")
     console.print()
 
     # Show task list
@@ -162,15 +176,36 @@ def run(
     task_table.add_column("Title", style="white")
 
     for i, t in enumerate(tasks, 1):
-        task_table.add_row(str(i), t["id"], t["title"])
+        task_table.add_row(str(i), t["id"], t.get("title", ""))
 
     console.print(task_table)
     console.print()
 
-    slack_post(
-        slack_webhook,
-        f"Found {task_count} tasks to implement. Starting work...",
-    )
+    if dry_run:
+        console.print("[bold yellow]Dry run mode[/bold yellow] -- not executing tasks.")
+        console.print(f"  Planning cost: [yellow]${state.cost:.2f}[/yellow]")
+        slack_post(slack_webhook, f"MorningStar dry run: {task_count} tasks identified. Cost: ${state.cost:.2f}")
+        raise typer.Exit(0)
+
+    # ── Confirmation gate ─────────────────────────────────────────
+    if not yes:
+        console.print(
+            Panel(
+                f"MorningStar will execute [bold]{task_count} tasks[/bold] in [cyan]{repo}[/cyan]\n"
+                f"using Claude Code with [bold red]shell access and no human confirmation[/bold red].\n\n"
+                f"Budget: [yellow]${budget:.2f}[/yellow] total, "
+                f"[yellow]${budget_per_task:.2f}[/yellow] per task.",
+                title="[bold bright_yellow]Confirm Execution[/bold bright_yellow]",
+                border_style="red",
+            )
+        )
+        confirmed = typer.confirm("Proceed?", default=False)
+        if not confirmed:
+            console.print("[dim]Cancelled.[/dim]")
+            raise typer.Exit(0)
+        console.print()
+
+    slack_post(slack_webhook, f"Found {task_count} tasks. Starting execution...")
 
     # ── Step 3: Execute tasks ─────────────────────────────────────
     progress = Progress(
@@ -183,26 +218,17 @@ def run(
     )
 
     with progress:
-        overall = progress.add_task(
-            "Running",
-            total=task_count,
-            task_title="MorningStar",
-        )
+        overall = progress.add_task("Running", total=task_count, task_title="MorningStar")
 
         for i, task in enumerate(tasks):
-            task_id = task["id"]
-            title = task["title"]
+            title = task.get("title", task["id"])
 
-            # Budget check
             if state.cost >= budget:
                 console.print(
                     f"\n[bold red]Budget limit reached[/bold red] "
                     f"(${state.cost:.2f}/${budget:.2f})"
                 )
-                slack_post(
-                    slack_webhook,
-                    f"Budget limit reached (${state.cost:.2f}/${budget:.2f}). Stopping.",
-                )
+                slack_post(slack_webhook, f"Budget limit (${state.cost:.2f}/${budget:.2f}). Stopping.")
                 break
 
             progress.update(overall, task_title=title)
@@ -210,7 +236,7 @@ def run(
 
             result = execute_task(
                 task,
-                repo_path=repo_path,
+                repo_path=repo,
                 model=model,
                 budget_per_task=budget_per_task,
                 log_dir=log_dir,
@@ -220,27 +246,17 @@ def run(
 
             if result.success:
                 state.completed += 1
-                progress.update(overall, advance=1)
-                slack_post(
-                    slack_webhook,
-                    f"[{i + 1}/{task_count}] Completed: *{title}* (${result.cost:.2f})",
-                )
+                slack_post(slack_webhook, f"[{i + 1}/{task_count}] Completed: *{title}* (${result.cost:.2f})")
             else:
                 state.failed += 1
-                progress.update(overall, advance=1)
-                slack_post(
-                    slack_webhook,
-                    f"[{i + 1}/{task_count}] Failed: *{title}* (${result.cost:.2f})",
-                )
+                slack_post(slack_webhook, f"[{i + 1}/{task_count}] Failed: *{title}* (${result.cost:.2f})")
+
+            progress.update(overall, advance=1)
 
     # ── Step 4: Summary ───────────────────────────────────────────
     console.print()
 
-    summary = Table(
-        title="Run Complete",
-        border_style="bright_yellow",
-        show_lines=True,
-    )
+    summary = Table(title="Run Complete", border_style="bright_yellow", show_lines=True)
     summary.add_column("Metric", style="dim")
     summary.add_column("Value", style="bold")
 
@@ -262,8 +278,7 @@ def run(
 @app.command()
 def version() -> None:
     """Show MorningStar version."""
-    print_banner(console)
-    console.print(f"  Version: [bold]{__version__}[/bold]")
+    console.print(f"morningstar {__version__}")
 
 
 def main() -> None:

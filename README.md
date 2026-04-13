@@ -1,27 +1,22 @@
 ```
-                            .
-                           /|\
-                          / | \
-                         /  |  \
-                        /   |   \
-                  .----'    |    '----.
-                   \        |        /
-                    \       |       /
-                     \      |      /
-                      \     |     /
-                       \    |    /
-                        \   |   /
-                         \  |  /
-                          \ | /
-                           \|/
-                            '
+            .
+           /|\
+          / | \
+         /  |  \
+    ----'   |   '----
+     \      |      /
+      \     |     /
+       \    |    /
+        \   |   /
+         \  |  /
+          \ | /
+           \|/
+            '
 
-  ███╗   ███╗ ██████╗ ██████╗ ███╗   ██╗██╗███╗   ██╗ ██████╗ ███████╗████████╗ █████╗ ██████╗
-  ████╗ ████║██╔═══██╗██╔══██╗████╗  ██║██║████╗  ██║██╔════╝ ██╔════╝╚══██╔══╝██╔══██╗██╔══██╗
-  ██╔████╔██║██║   ██║██████╔╝██╔██╗ ██║██║██╔██╗ ██║██║  ███╗███████╗   ██║   ███████║██████╔╝
-  ██║╚██╔╝██║██║   ██║██╔══██╗██║╚██╗██║██║██║╚██╗██║██║   ██║╚════██║   ██║   ██╔══██║██╔══██╗
-  ██║ ╚═╝ ██║╚██████╔╝██║  ██║██║ ╚████║██║██║ ╚████║╚██████╔╝███████║   ██║   ██║  ██║██║  ██║
-  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝
+ __  __  ___  ___ _  _ ___ _  _  ___ ___ _____ _   ___
+|  \/  |/ _ \| _ \ \| |_ _| \| |/ __/ __|_   _/_\ | _ \
+| |\/| | (_) |   / .` || || .` | (_ \__ \ | |/ _ \|   /
+|_|  |_|\___/|_|_\_|\_|___|_|\_|\___|___/ |_/_/ \_\_|_\
 ```
 
 **Autonomous coding agent that turns Notion PRDs into working code.**
@@ -46,7 +41,7 @@ pip install -e .
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.10+
 - [Claude Code CLI](https://claude.ai/code) installed and authenticated
 - Notion MCP connected in your Claude Code config
 
@@ -61,16 +56,26 @@ morningstar run \
   --repo /path/to/your/project
 ```
 
+Or use environment variables for secrets:
+
+```bash
+export MORNINGSTAR_SLACK_WEBHOOK="https://hooks.slack.com/services/..."
+morningstar run -n "notion-page-id" -r /path/to/repo
+```
+
 ### Options
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
 | `--notion-url` | `-n` | required | Notion page URL or ID with the PRD |
-| `--slack-webhook` | `-s` | required | Slack webhook for status updates |
+| `--slack-webhook` | `-s` | env var | Slack webhook (or set `MORNINGSTAR_SLACK_WEBHOOK`) |
 | `--repo` | `-r` | required | Path to the target repository |
 | `--model` | `-m` | `sonnet` | Claude model (`sonnet`, `opus`, `haiku`) |
 | `--budget` | `-b` | `50.00` | Total USD budget for the run |
 | `--task-budget` | | `5.00` | Max USD per individual task |
+| `--max-tasks` | | `20` | Maximum tasks to generate |
+| `--dry-run` | | `false` | Fetch PRD + generate tasks without executing |
+| `--yes` | `-y` | `false` | Skip confirmation prompt |
 
 ---
 
@@ -83,17 +88,32 @@ morningstar run \
                         |
  3. Plan                Generate a structured task list (ordered by dependency)
                         |
- 4. Execute             For each task:
+ 4. Confirm             Show task plan, ask for human confirmation
+                        |
+ 5. Execute             For each task:
                           - Implement code changes
                           - Write/update tests
                           - Run tests, fix failures
                           - Git commit
                           - Post to Slack
                         |
- 5. Summary             Report: tasks done, tasks failed, total cost
+ 6. Summary             Report: tasks done, tasks failed, total cost
 ```
 
 If a task fails, MorningStar retries once using Claude Code's session resumption to preserve context from the first attempt.
+
+---
+
+## Security
+
+MorningStar executes code in your repository with full shell access. Before running:
+
+- **Review the PRD** -- PRD content influences agent behavior
+- **Use `--dry-run`** to preview tasks before execution
+- **Set budget limits** to cap spending
+- **Run in isolation** (VM/container) for untrusted PRDs
+
+See [SECURITY.md](SECURITY.md) for the full security model and vulnerability reporting.
 
 ---
 
@@ -127,11 +147,23 @@ All agent output is saved to `<repo>/.agent-logs/`:
 
 ---
 
+## Development
+
+```bash
+pip install -e ".[dev]"
+ruff check src/
+mypy src/
+pytest
+```
+
+---
+
 ## Environment
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
+| `MORNINGSTAR_SLACK_WEBHOOK` | No | Slack webhook (alternative to CLI flag) |
 
 The Claude Code CLI must be authenticated (`claude auth login`).
 
