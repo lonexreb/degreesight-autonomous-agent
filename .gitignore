@@ -1,2 +1,7 @@
 .env
 .agent-logs/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/

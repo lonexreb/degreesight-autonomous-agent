@@ -1,46 +1,43 @@
-# Autonomous Coding Agent
+# MorningStar
 
-A single shell script that reads a PRD from Notion, analyzes a codebase, generates tasks, and implements them autonomously using Claude Code CLI. Posts progress and questions to Slack.
+Autonomous coding agent that reads a PRD from Notion, analyzes a codebase, generates tasks, and implements them using Claude Code CLI. Posts progress to Slack.
+
+## Tech Stack
+
+- Python 3.10+ with `typer` + `rich`
+- Claude Code CLI (headless mode via `-p`)
+- Notion MCP for PRD ingestion
+- Slack webhooks for status updates
+
+## Install
+
+```bash
+pip install -e .
+```
 
 ## Usage
 
 ```bash
-./agent-runner.sh \
+morningstar run \
   --notion-url "https://notion.so/PRD-abc123" \
   --slack-webhook "https://hooks.slack.com/services/..." \
-  --repo "/path/to/target/repo"
+  --repo /path/to/repo
 ```
 
-## How It Works
+## Project Structure
 
-1. Fetches PRD from Notion via Claude Code + MCP
-2. Analyzes the target codebase, diffs against PRD requirements
-3. Generates a structured task list (JSON) of what's missing
-4. For each task: implements code, writes tests, runs tests, commits
-5. Posts progress to Slack after each task
-6. Retries failed tasks once with session context
-7. Tracks cost and respects budget limits
+```
+src/morningstar/
+  __init__.py    -- version
+  cli.py         -- typer CLI entry point (run, version commands)
+  engine.py      -- core loop (fetch PRD, generate tasks, execute, git commit)
+  banner.py      -- ASCII art banner and branding
+```
 
-## Files
+## Conventions
 
-- `agent-runner.sh` -- the entire product (~200 lines)
-- `agent-prompt.md` -- system prompt that shapes agent behavior
-- `.env.example` -- required environment variables
-
-## Configuration
-
-Set via environment variables or CLI flags:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AGENT_MODEL` | `sonnet` | Claude model to use |
-| `AGENT_MAX_BUDGET_PER_TASK` | `5.00` | Max USD per task |
-| `AGENT_TOTAL_BUDGET` | `50.00` | Total USD budget for full run |
-| `ANTHROPIC_API_KEY` | (required) | Anthropic API key |
-
-## Logs
-
-Agent logs are written to `<repo>/.agent-logs/`:
-- `prd.md` -- fetched PRD content
-- `tasks.json` -- generated task list
-- `task-<id>.json` -- full Claude output per task
+- Immutable dataclasses for state (`RunState`, `TaskResult`)
+- All Claude CLI calls go through `_run_claude()` in engine.py
+- Slack posts go through `slack_post()` in engine.py
+- Logs written to `<target-repo>/.agent-logs/`
+- Budget tracked via `RunState.cost` -- checked before each task
