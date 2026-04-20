@@ -1,0 +1,15 @@
+{
+  "name": "morningstar",
+  "version": "0.1.0",
+  "description": "Autonomous coding agent that turns Notion PRDs into working code. Reads requirements, analyzes your codebase, generates tasks, and implements them with tests and git commits.",
+  "author": {
+    "name": "Shubhankar Tripathy",
+    "url": "https://github.com/lonexreb"
+  },
+  "homepage": "https://github.com/lonexreb/morningstar",
+  "repository": "https://github.com/lonexreb/morningstar",
+  "license": "MIT",
+  "keywords": ["ai", "agent", "coding", "notion", "prd", "automation", "autonomous"],
+  "skills": "./skills/",
+  "agents": "./agents/"
+}

@@ -27,27 +27,24 @@ Give it a PRD, a repo, and a Slack webhook. It reads the requirements, analyzes 
 
 ## Install
 
+### As Claude Code Plugin (recommended)
+
+```bash
+/plugin install morningstar@https://github.com/lonexreb/morningstar
+```
+
+Then use inside any Claude Code session:
+
+```
+/morningstar:run https://notion.so/Your-PRD-abc123
+/morningstar:dry-run https://notion.so/Your-PRD-abc123
+```
+
+### As Standalone CLI
+
 ```bash
 pipx install morningstar-agent
 ```
-
-Or from source:
-
-```bash
-git clone https://github.com/lonexreb/morningstar.git
-cd morningstar
-pip install -e .
-```
-
-### Prerequisites
-
-- Python 3.10+
-- [Claude Code CLI](https://claude.ai/code) installed and authenticated
-- Notion MCP connected in your Claude Code config
-
----
-
-## Usage
 
 ```bash
 morningstar run \
@@ -62,6 +59,12 @@ Or use environment variables for secrets:
 export MORNINGSTAR_SLACK_WEBHOOK="https://hooks.slack.com/services/..."
 morningstar run -n "notion-page-id" -r /path/to/repo
 ```
+
+### Prerequisites
+
+- [Claude Code CLI](https://claude.ai/code) installed and authenticated
+- Notion MCP connected in your Claude Code config
+- Python 3.10+ (for standalone CLI only)
 
 ### Options
 
