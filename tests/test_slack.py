@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,7 +11,6 @@ from morningstar.engine import (
     slack_post_and_get_reply,
     validate_bot_token,
 )
-
 
 # ── validate_bot_token ────────────────────────────────────────
 

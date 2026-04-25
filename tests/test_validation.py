@@ -10,7 +10,6 @@ from morningstar.engine import (
     validate_slack_webhook,
 )
 
-
 # ── validate_model ────────────────────────────────────────────
 
 

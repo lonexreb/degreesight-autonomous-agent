@@ -20,7 +20,6 @@ from morningstar.engine import (
     slack_post,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────
 
 

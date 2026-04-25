@@ -135,20 +135,20 @@ def run(
         validate_model(model)
     except ValueError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     try:
         validate_slack_webhook(slack_webhook)
     except ValueError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if slack_bot_token:
         try:
             validate_bot_token(slack_bot_token)
         except ValueError as e:
             console.print(f"[bold red]Error:[/bold red] {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         if not slack_channel:
             console.print(
                 "[bold red]Error:[/bold red] --slack-channel is required when "
@@ -175,9 +175,10 @@ def run(
         except RuntimeError as e:
             console.print(f"[bold red]Error:[/bold red] {e}")
             slack_post(slack_webhook, f"MorningStar failed: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
-    console.print(f"  [green]PRD fetched[/green] ({prd_text.count(chr(10)) + 1} lines, ${prd_cost:.2f})")
+    line_count = prd_text.count(chr(10)) + 1
+    console.print(f"  [green]PRD fetched[/green] ({line_count} lines, ${prd_cost:.2f})")
 
     # ── Step 2: Generate tasks ────────────────────────────────────
     with console.status("[bold yellow]Analyzing codebase & generating tasks...", spinner="star"):
@@ -194,7 +195,7 @@ def run(
         except RuntimeError as e:
             console.print(f"[bold red]Error:[/bold red] {e}")
             slack_post(slack_webhook, f"MorningStar failed: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     task_count = len(tasks)
     state.tasks = tasks
@@ -220,15 +221,20 @@ def run(
     if dry_run:
         console.print("[bold yellow]Dry run mode[/bold yellow] -- not executing tasks.")
         console.print(f"  Planning cost: [yellow]${state.cost:.2f}[/yellow]")
-        slack_post(slack_webhook, f"MorningStar dry run: {task_count} tasks identified. Cost: ${state.cost:.2f}")
+        slack_post(
+            slack_webhook,
+            f"MorningStar dry run: {task_count} tasks identified. Cost: ${state.cost:.2f}",
+        )
         raise typer.Exit(0)
 
     # ── Confirmation gate ─────────────────────────────────────────
     if not yes:
         console.print(
             Panel(
-                f"MorningStar will execute [bold]{task_count} tasks[/bold] in [cyan]{repo}[/cyan]\n"
-                f"using Claude Code with [bold red]shell access and no human confirmation[/bold red].\n\n"
+                f"MorningStar will execute [bold]{task_count} tasks[/bold] "
+                f"in [cyan]{repo}[/cyan]\n"
+                f"using Claude Code with "
+                f"[bold red]shell access and no human confirmation[/bold red].\n\n"
                 f"Budget: [yellow]${budget:.2f}[/yellow] total, "
                 f"[yellow]${budget_per_task:.2f}[/yellow] per task.",
                 title="[bold bright_yellow]Confirm Execution[/bold bright_yellow]",
@@ -264,7 +270,10 @@ def run(
                     f"\n[bold red]Budget limit reached[/bold red] "
                     f"(${state.cost:.2f}/${budget:.2f})"
                 )
-                slack_post(slack_webhook, f"Budget limit (${state.cost:.2f}/${budget:.2f}). Stopping.")
+                slack_post(
+                    slack_webhook,
+                    f"Budget limit (${state.cost:.2f}/${budget:.2f}). Stopping.",
+                )
                 break
 
             progress.update(overall, task_title=title)
@@ -286,10 +295,16 @@ def run(
 
             if result.success:
                 state.completed += 1
-                slack_post(slack_webhook, f"[{i + 1}/{task_count}] Completed: *{title}* (${result.cost:.2f})")
+                slack_post(
+                    slack_webhook,
+                    f"[{i + 1}/{task_count}] Completed: *{title}* (${result.cost:.2f})",
+                )
             else:
                 state.failed += 1
-                slack_post(slack_webhook, f"[{i + 1}/{task_count}] Failed: *{title}* (${result.cost:.2f})")
+                slack_post(
+                    slack_webhook,
+                    f"[{i + 1}/{task_count}] Failed: *{title}* (${result.cost:.2f})",
+                )
 
             progress.update(overall, advance=1)
 

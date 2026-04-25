@@ -54,6 +54,12 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+# B008: typer.Option/Argument in defaults is idiomatic for Typer apps.
+extend-ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# B017 (assert blind exception) is acceptable when verifying frozen-dataclass mutation.
+"tests/**" = ["B017"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

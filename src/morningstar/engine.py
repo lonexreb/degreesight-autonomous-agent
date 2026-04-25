@@ -205,7 +205,8 @@ def _run_claude(
         )
         output = result.stdout.strip()
         if output:
-            return json.loads(output)
+            parsed: dict = json.loads(output)
+            return parsed
 
         stderr_preview = result.stderr[:500] if result.stderr else "No output"
         if len(result.stderr or "") > 500:
@@ -298,7 +299,7 @@ def slack_post_and_get_reply(
             messages = replies_data.get("messages", [])
             # First message is the original post; replies start at index 1
             for msg in messages[1:]:
-                reply_text = msg.get("text", "").strip()
+                reply_text: str = msg.get("text", "").strip()
                 if reply_text:
                     return reply_text
 
@@ -433,11 +434,12 @@ def generate_tasks(
 
     # Validate and sanitize task IDs, enforce cap
     validated: list[Task] = []
-    for t in tasks[:max_tasks]:
-        if "id" not in t or "title" not in t:
+    for raw in tasks[:max_tasks]:
+        if not isinstance(raw, dict) or "id" not in raw or "title" not in raw:
             continue
-        t["id"] = _sanitize_task_id(t["id"])
-        validated.append(t)
+        task: Task = dict(raw)  # type: ignore[assignment]
+        task["id"] = _sanitize_task_id(raw["id"])
+        validated.append(task)
 
     (log_dir / "tasks.json").write_text(json.dumps(validated, indent=2))
     return validated, cost
@@ -507,7 +509,10 @@ def execute_task(
         if q_context:
             slack_question += f"\n\nContext: {q_context}"
         if q_default:
-            slack_question += f"\n\nDefault (if no reply in {question_timeout // 60}min): {q_default}"
+            slack_question += (
+                f"\n\nDefault (if no reply in "
+                f"{question_timeout // 60}min): {q_default}"
+            )
 
         if bot_token and slack_channel:
             logger.info("Posting question to Slack for task %s", task_id)
@@ -540,7 +545,10 @@ def execute_task(
             # No bot token -- log question and notify via webhook
             logger.info("Question from task %s (no bot token): %s", task_id, q_text)
             if slack_webhook:
-                slack_post(slack_webhook, slack_question + "\n\n_(No bot token -- proceeding with default)_")
+                slack_post(
+                    slack_webhook,
+                    slack_question + "\n\n_(No bot token -- proceeding with default)_",
+                )
 
     # Retry once on error with session context
     validated_sid = _validate_session_id(session_id)

@@ -28,7 +28,6 @@ from morningstar.engine import (
     write_weekly_spend,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────
 
 
