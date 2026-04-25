@@ -29,9 +29,15 @@ morningstar run \
 ```
 src/morningstar/
   __init__.py    -- version
-  cli.py         -- typer CLI entry point (run, version, dry-run, confirm gate)
-  engine.py      -- core loop (fetch PRD, generate tasks, execute, git commit)
+  cli.py         -- typer CLI entry point (run, version, dry-run, process-queue)
+  engine.py      -- core loop + 24/7 queue processor (fetch, plan, execute, commit, PR)
   banner.py      -- ASCII art banner and branding
+
+morningstar_demo.py  -- standalone walkthrough of process-queue with all I/O mocked
+.github/workflows/   -- 15-min cron executor + manual dry-run executor
+.claude-plugin/      -- plugin manifest
+agents/morningstar-runner.md  -- autonomous orchestrator agent
+skills/run|dry-run|version|watch  -- user-facing slash commands
 ```
 
 ## Conventions
@@ -52,7 +58,17 @@ src/morningstar/
 ## Dev Commands
 
 ```bash
-ruff check src/         # lint
-mypy src/               # type check
-pytest                  # tests
+ruff check src/ tests/        # lint (clean)
+mypy src/morningstar/         # type check (clean)
+pytest                        # 117 tests, all passing
+python morningstar_demo.py    # zero-credentials pipeline walkthrough
 ```
+
+## Quality Bar
+
+Before any commit:
+- `ruff check src/ tests/` must pass
+- `mypy src/morningstar/` must pass
+- `pytest` must be green
+
+`pyproject.toml` ignores B008 globally (typer.Option-in-defaults is idiomatic) and B017 in tests (frozen-dataclass mutation assertion).

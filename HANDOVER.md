@@ -93,6 +93,14 @@ GitHub UI → Actions → `morningstar-scheduled` → Run workflow. No input nee
 
 For a no-cost preview: Actions → `morningstar-scheduled-dryrun` → Run workflow. This only scans the queue and reports counts; it does not execute.
 
+For a zero-cost local smoke test that exercises the full pipeline against a temp git repo with all integrations mocked:
+
+```bash
+python morningstar_demo.py
+```
+
+Use this on a local checkout to confirm the engine builds, plans, and commits correctly after a deploy.
+
 ### Pause the 24/7 system
 
 GitHub UI → Actions → `morningstar-scheduled` → ⋯ → **Disable workflow**. The cron stops firing immediately. No other state changes.

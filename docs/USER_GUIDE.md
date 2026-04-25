@@ -594,6 +594,27 @@ Smaller, focused PRDs produce better results than kitchen-sink documents.
 
 ---
 
+## Demo Walkthrough (No Credentials)
+
+Before configuring Notion, Jira, or Slack, you can drive the queue processor end-to-end against a temporary git repository with every external integration mocked. The demo lives at the repo root:
+
+```bash
+python morningstar_demo.py
+```
+
+What it does:
+
+- Creates a throwaway git repo in a temp directory
+- Mocks `fetch_pending_notion`, `fetch_pending_jira`, `set_notion_status`, `fetch_prd`, `generate_tasks`, `execute_task`, and `open_github_pr`
+- Drives a fake "Add hello world endpoint" PRD through the full state machine
+- Writes real files (`app.py`, `test_app.py`) and commits them with the standard `morningstar(<task-id>): <title>` message
+- Prints a narrated summary -- items scanned, success/failure counts, simulated cost, weekly spend ledger, PR URL
+- Cleans up the temp directory on exit
+
+Use it to sanity-check the engine after pulling new changes, validate a fresh install, or walk a stakeholder through the pipeline live without provisioning credentials.
+
+---
+
 ## 24/7 Setup (Scheduled Queue Processor)
 
 MorningStar can run continuously, polling a Notion database and Jira project every 15 minutes, processing any PRDs it finds, and opening PRs against a target repo. This is the path for handoff to an operations team.

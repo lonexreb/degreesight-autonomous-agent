@@ -127,6 +127,24 @@ See [HANDOVER.md](HANDOVER.md) for the complete runbook and [docs/USER_GUIDE.md]
 
 ---
 
+## Demo (no credentials required)
+
+Want to see the queue processor end-to-end without setting up Notion, Jira, or Slack? Run the standalone demo:
+
+```bash
+python morningstar_demo.py
+```
+
+The script spins up a temporary git repo, mocks every external integration (Notion, Jira, Claude API, GitHub), drives a fake "Add hello world endpoint" PRD through the full state machine, and prints a narrated summary including simulated cost, status transitions, and PR creation. Tear-down is automatic.
+
+Use this to:
+
+- Validate a fresh install before configuring credentials
+- Walk a stakeholder through the pipeline live
+- Sanity-check the engine after pulling new changes
+
+---
+
 ## Security
 
 MorningStar executes code in your repository with full shell access. Before running:
