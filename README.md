@@ -283,6 +283,7 @@ Inside Claude Code: `/plugin uninstall morningstar` then optionally `/plugin mar
 - [HANDOVER.md](HANDOVER.md) — operations runbook for the 24/7 system.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — engine internals.
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md) — end-to-end setup walkthrough.
+- [docs/COMPARISONS.md](docs/COMPARISONS.md) — how MorningStar differs from sweeper-style agents (OpenClaw's ClawSweeper).
 
 ---
 

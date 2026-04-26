@@ -33,6 +33,8 @@ The plugin surface (`.claude-plugin/`, `skills/`, `agents/`) exposes `/morningst
 
 `marketplace.json` lets users register MorningStar with `/plugin marketplace add lonexreb/morningstar` and receive updates via `/plugin marketplace update morningstar`. It mirrors the official Anthropic plugin marketplace format -- one repo, one plugin entry, `category: development`. `plugin.json` is the source of truth for the manifest (name, version, description, author, homepage, repository, license, keywords, skill/agent paths); marketplace.json fields supplement it for discovery.
 
+> **Not a sweeper.** MorningStar is a forward-motion agent (PRD -> PR), not an issue/PR housekeeping skill. If you came here expecting backlog hygiene tooling, see [COMPARISONS.md](COMPARISONS.md) for the explicit positioning vs. OpenClaw's ClawSweeper.
+
 ---
 
 ## Engine Overview
