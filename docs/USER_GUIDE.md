@@ -313,6 +313,30 @@ morningstar version
 # morningstar 0.1.0
 ```
 
+### `morningstar status`
+
+Show queue health for a repo MorningStar processes — weekly spend bar, recent runs, aggregate success rate, and last PR URLs. Reads `.morningstar/run-history.jsonl` written by every queue run; works offline.
+
+```bash
+morningstar status --repo /path/to/repo
+morningstar status --repo /path/to/repo --limit 25
+```
+
+| Option | Default | Notes |
+|--------|---------|-------|
+| `--repo`, `-r` | `.` | Target repo (the one `process-queue` runs against). |
+| `--limit`, `-n` | `10` | How many recent runs to show. Range: 1–100. |
+| `--weekly-budget` | `200.0` | Only used as a fallback when no run history exists yet. Once history is present, the budget from the most recent run is shown. |
+
+**What you see:**
+
+- **Weekly spend** — color-coded bar (green < 60% / yellow < 90% / red ≥ 90%) showing `spend / budget` for the current ISO week.
+- **Recent runs** — table with timestamp, items scanned, succeeded, failed, skipped (dry-run), cost, and live/dry mode.
+- **Aggregate health** — total processed, success rate (color-coded ≥ 80% green / ≥ 50% yellow / else red), failed count, total spend across the displayed window.
+- **Recent PRs** — most recent 10 PR URLs across the displayed runs.
+
+**Empty history**: if no runs have been recorded yet, the command prints a hint to run `morningstar process-queue` first instead of erroring.
+
 ---
 
 ## Model Selection
