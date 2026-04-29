@@ -118,6 +118,15 @@ Use this for fast triage before opening GH Actions logs. No external services re
 
 To see a longer history: `morningstar status -r /path/to/repo --limit 50`.
 
+### Wire up automated alerting (cron + Slack)
+
+```bash
+# crontab -e -- alert if MorningStar is unhealthy
+*/30 * * * * cd /path/to/target-repo && morningstar status --health-check --since 6h --min-runs 3 || curl -X POST -H 'Content-Type: application/json' -d "{\"text\":\"⚠️ MorningStar health check failed (exit $?)\"}" "$SLACK_WEBHOOK"
+```
+
+`--health-check` exit codes: `0` healthy, `1` warning, `2` critical. Defaults: warn at 30% failure rate, critical at 60% failure rate or 90% weekly spend. Tune via `--warn-failure-rate`, `--critical-failure-rate`, `--critical-weekly-pct`, and `--min-runs` (avoids false alarms with tiny samples). Pipe `--json` for richer alert bodies.
+
 ### Pause the 24/7 system
 
 GitHub UI → Actions → `morningstar-scheduled` → ⋯ → **Disable workflow**. The cron stops firing immediately. No other state changes.

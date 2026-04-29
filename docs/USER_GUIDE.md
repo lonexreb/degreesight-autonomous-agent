@@ -322,6 +322,7 @@ morningstar status --repo /path/to/repo
 morningstar status --repo /path/to/repo --limit 25
 morningstar status --repo /path/to/repo --since 24h           # only the last day
 morningstar status --repo /path/to/repo --json | jq           # script-friendly
+morningstar status --repo /path/to/repo --health-check        # cron-friendly exit code
 ```
 
 | Option | Default | Notes |
@@ -330,6 +331,11 @@ morningstar status --repo /path/to/repo --json | jq           # script-friendly
 | `--limit`, `-n` | `10` | How many recent runs to show. Range: 1–100. |
 | `--since` | _none_ | Filter to runs newer than this duration. Accepts `<int><unit>` where unit is `s`, `m`, `h`, or `d` (case-insensitive). Examples: `30m`, `24h`, `7d`. |
 | `--json` | _off_ | Emit a machine-readable JSON snapshot to stdout instead of the Rich dashboard. Banner is suppressed so output is pipe-safe (`jq`, etc.). |
+| `--health-check` | _off_ | Exit non-zero based on thresholds. `0`=healthy, `1`=warning, `2`=critical. Composes with `--json` and `--since`. |
+| `--warn-failure-rate` | `30.0` | Failure-rate %% above which `--health-check` exits 1. |
+| `--critical-failure-rate` | `60.0` | Failure-rate %% above which `--health-check` exits 2. |
+| `--critical-weekly-pct` | `90.0` | Weekly-spend %% above which `--health-check` exits 2. |
+| `--min-runs` | `1` | Skip failure-rate evaluation below this run count (avoids false alarms with tiny samples). |
 | `--weekly-budget` | `200.0` | Only used as a fallback when no run history exists yet. Once history is present, the budget from the most recent run is shown. |
 
 **What you see (default Rich mode):**
@@ -363,6 +369,15 @@ morningstar status --repo /path/to/repo --json | jq           # script-friendly
 ```
 
 Useful for cron-driven monitoring (post a Slack alert when `success_rate_pct < 50`, when `weekly_pct > 90`, etc.).
+
+**Cron health-check example** (drop into `crontab -e`):
+
+```bash
+# Every 30 min: alert Slack if MorningStar is unhealthy.
+*/30 * * * * cd /path/to/target-repo && morningstar status --health-check --since 6h --min-runs 3 || curl -X POST -H 'Content-Type: application/json' -d "{\"text\":\"⚠️ MorningStar health check failed (exit $?)\"}" "$SLACK_WEBHOOK"
+```
+
+Compose with `--json` to include verdict + reasons in the alert body.
 
 **Empty history**: if no runs have been recorded yet, the command prints a hint to run `morningstar process-queue` first instead of erroring. With `--since`, an empty window prints a "no runs in the last X" message.
 

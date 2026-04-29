@@ -508,6 +508,52 @@ def _filter_since(records: list, since: str | None) -> list:
     return kept
 
 
+def _evaluate_health(
+    *,
+    total_processed: int,
+    failure_rate: float,
+    weekly_pct: float,
+    min_runs: int,
+    warn_failure_rate: float,
+    critical_failure_rate: float,
+    critical_weekly_pct: float,
+) -> tuple[str, list[str]]:
+    """Determine ('healthy' | 'warning' | 'critical', list of reasons).
+
+    Failure-rate thresholds only fire once `min_runs` items have been processed
+    in the window -- avoids false alarms during a quiet stretch (and the first
+    boot of a new repo).
+    """
+    reasons: list[str] = []
+    verdict = "healthy"
+
+    if weekly_pct >= critical_weekly_pct:
+        verdict = "critical"
+        reasons.append(
+            f"weekly spend at {weekly_pct:.1f}% (>= {critical_weekly_pct:.0f}%)"
+        )
+
+    if total_processed >= min_runs:
+        if failure_rate >= critical_failure_rate:
+            verdict = "critical"
+            reasons.append(
+                f"failure rate {failure_rate:.1f}% "
+                f"(>= {critical_failure_rate:.0f}%)"
+            )
+        elif failure_rate >= warn_failure_rate and verdict != "critical":
+            verdict = "warning"
+            reasons.append(
+                f"failure rate {failure_rate:.1f}% "
+                f"(>= {warn_failure_rate:.0f}%)"
+            )
+
+    return verdict, reasons
+
+
+def _verdict_exit_code(verdict: str) -> int:
+    return {"healthy": 0, "warning": 1, "critical": 2}.get(verdict, 0)
+
+
 @app.command()
 def status(
     repo: Path = typer.Option(
@@ -545,6 +591,41 @@ def status(
         "--json",
         help="Emit a machine-readable JSON snapshot instead of a Rich dashboard.",
     ),
+    health_check: bool = typer.Option(
+        False,
+        "--health-check",
+        help=(
+            "Exit non-zero based on thresholds. 0 = healthy, 1 = warning, "
+            "2 = critical. Composes with --json for cron alerts."
+        ),
+    ),
+    warn_failure_rate: float = typer.Option(
+        30.0,
+        "--warn-failure-rate",
+        min=0.0,
+        max=100.0,
+        help="Failure-rate %% above which --health-check exits 1.",
+    ),
+    critical_failure_rate: float = typer.Option(
+        60.0,
+        "--critical-failure-rate",
+        min=0.0,
+        max=100.0,
+        help="Failure-rate %% above which --health-check exits 2.",
+    ),
+    critical_weekly_pct: float = typer.Option(
+        90.0,
+        "--critical-weekly-pct",
+        min=0.0,
+        max=100.0,
+        help="Weekly-spend %% above which --health-check exits 2.",
+    ),
+    min_runs: int = typer.Option(
+        1,
+        "--min-runs",
+        min=0,
+        help="Skip --health-check failure-rate evaluation below this run count.",
+    ),
 ) -> None:
     """Show queue health: weekly spend, recent runs, last PRs opened."""
     week_key, spend_so_far = read_weekly_spend(repo)
@@ -574,6 +655,17 @@ def status(
     )
     recent_prs = [pr for rec in reversed(history) for pr in rec.prs_opened][:10]
 
+    failure_rate = 100.0 - success_rate if total_processed else 0.0
+    health_verdict, health_reasons = _evaluate_health(
+        total_processed=total_processed,
+        failure_rate=failure_rate,
+        weekly_pct=pct,
+        min_runs=min_runs,
+        warn_failure_rate=warn_failure_rate,
+        critical_failure_rate=critical_failure_rate,
+        critical_weekly_pct=critical_weekly_pct,
+    )
+
     if json_output:
         payload = {
             "week_key": week_key,
@@ -588,7 +680,13 @@ def status(
                 "items_succeeded": total_succeeded,
                 "items_failed": total_failed,
                 "success_rate_pct": round(success_rate, 2),
+                "failure_rate_pct": round(failure_rate, 2),
                 "total_cost": round(total_cost, 4),
+            },
+            "health": {
+                "verdict": health_verdict,  # "healthy" | "warning" | "critical"
+                "exit_code": _verdict_exit_code(health_verdict),
+                "reasons": health_reasons,
             },
             "recent_prs": recent_prs,
             "runs": [
@@ -611,6 +709,8 @@ def status(
         }
         # print() (not console.print) keeps stdout pristine for piping into jq.
         print(_json.dumps(payload, indent=2))
+        if health_check:
+            raise typer.Exit(_verdict_exit_code(health_verdict))
         return
 
     print_banner(console)
@@ -695,6 +795,21 @@ def status(
         for pr in recent_prs:
             prs_table.add_row(pr)
         console.print(prs_table)
+
+    if health_check:
+        verdict_color = {
+            "healthy": "green",
+            "warning": "yellow",
+            "critical": "red",
+        }[health_verdict]
+        reason_text = (
+            "; ".join(health_reasons) if health_reasons else "all thresholds OK"
+        )
+        console.print(
+            f"[bold {verdict_color}]Health: {health_verdict.upper()}[/bold "
+            f"{verdict_color}] -- {reason_text}"
+        )
+        raise typer.Exit(_verdict_exit_code(health_verdict))
 
 
 def main() -> None:

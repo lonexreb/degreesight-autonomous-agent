@@ -356,3 +356,147 @@ class TestStatusSince:
         )
         assert result.exit_code == 0
         assert "No runs in the last 1h" in result.stdout
+
+
+# ── --health-check ───────────────────────────────────────────
+
+
+class TestHealthCheck:
+    def test_evaluate_health_healthy(self) -> None:
+        from morningstar.cli import _evaluate_health
+        verdict, reasons = _evaluate_health(
+            total_processed=10, failure_rate=10.0, weekly_pct=50.0,
+            min_runs=1, warn_failure_rate=30.0, critical_failure_rate=60.0,
+            critical_weekly_pct=90.0,
+        )
+        assert verdict == "healthy"
+        assert reasons == []
+
+    def test_evaluate_health_warning(self) -> None:
+        from morningstar.cli import _evaluate_health
+        verdict, reasons = _evaluate_health(
+            total_processed=10, failure_rate=40.0, weekly_pct=50.0,
+            min_runs=1, warn_failure_rate=30.0, critical_failure_rate=60.0,
+            critical_weekly_pct=90.0,
+        )
+        assert verdict == "warning"
+        assert any("failure rate" in r for r in reasons)
+
+    def test_evaluate_health_critical_failure_rate(self) -> None:
+        from morningstar.cli import _evaluate_health
+        verdict, _ = _evaluate_health(
+            total_processed=10, failure_rate=80.0, weekly_pct=50.0,
+            min_runs=1, warn_failure_rate=30.0, critical_failure_rate=60.0,
+            critical_weekly_pct=90.0,
+        )
+        assert verdict == "critical"
+
+    def test_evaluate_health_critical_budget(self) -> None:
+        from morningstar.cli import _evaluate_health
+        verdict, reasons = _evaluate_health(
+            total_processed=10, failure_rate=10.0, weekly_pct=95.0,
+            min_runs=1, warn_failure_rate=30.0, critical_failure_rate=60.0,
+            critical_weekly_pct=90.0,
+        )
+        assert verdict == "critical"
+        assert any("weekly spend" in r for r in reasons)
+
+    def test_evaluate_health_min_runs_suppresses_warning(self) -> None:
+        """No false alarms when too few runs have happened to be statistical."""
+        from morningstar.cli import _evaluate_health
+        verdict, _ = _evaluate_health(
+            total_processed=2, failure_rate=80.0, weekly_pct=50.0,
+            min_runs=5, warn_failure_rate=30.0, critical_failure_rate=60.0,
+            critical_weekly_pct=90.0,
+        )
+        assert verdict == "healthy"
+
+    def test_health_check_exit_code_healthy(self, tmp_repo: Path) -> None:
+        # 1 run, 1 success -> healthy
+        append_run_history(
+            tmp_repo,
+            _record(scanned=1, processed=1, succeeded=1, failed=0,
+                    weekly_spend_after=10.0),
+        )
+        runner = CliRunner()
+        result = runner.invoke(
+            app, ["status", "--repo", str(tmp_repo), "--health-check"]
+        )
+        assert result.exit_code == 0
+        assert "HEALTHY" in result.stdout
+
+    def test_health_check_exit_code_warning(self, tmp_repo: Path) -> None:
+        # 5 processed, 2 failed -> 40% failure rate -> warning (>= 30%)
+        for _ in range(5):
+            append_run_history(
+                tmp_repo,
+                _record(scanned=1, processed=1, succeeded=0, failed=1),
+            )
+        for _ in range(3):
+            append_run_history(
+                tmp_repo,
+                _record(scanned=1, processed=1, succeeded=1, failed=0),
+            )
+        runner = CliRunner()
+        result = runner.invoke(
+            app, ["status", "--repo", str(tmp_repo), "--health-check"]
+        )
+        # 3 succeeded / 8 processed = 37.5% success -> 62.5% failure -> critical
+        assert result.exit_code == 2
+        assert "CRITICAL" in result.stdout
+
+    def test_health_check_critical_weekly_pct(self, tmp_repo: Path) -> None:
+        # Force weekly spend right under budget so we trip critical_weekly_pct.
+        from morningstar.engine import _iso_week_key, write_weekly_spend
+        write_weekly_spend(tmp_repo, _iso_week_key(), 195.0)
+        append_run_history(
+            tmp_repo,
+            _record(scanned=1, processed=1, succeeded=1, failed=0,
+                    weekly_budget=200.0, weekly_spend_after=195.0),
+        )
+        runner = CliRunner()
+        result = runner.invoke(
+            app, ["status", "--repo", str(tmp_repo), "--health-check"]
+        )
+        assert result.exit_code == 2
+        assert "weekly spend" in result.stdout
+
+    def test_health_check_with_json_output(self, tmp_repo: Path) -> None:
+        import json as _json
+        append_run_history(
+            tmp_repo,
+            _record(scanned=1, processed=1, succeeded=0, failed=1),
+        )
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "status", "--repo", str(tmp_repo),
+                "--health-check", "--json", "--min-runs", "1",
+            ],
+        )
+        # 100% failure rate, min_runs=1 -> critical
+        assert result.exit_code == 2
+        payload = _json.loads(result.stdout)
+        assert payload["health"]["verdict"] == "critical"
+        assert payload["health"]["exit_code"] == 2
+        assert any("failure rate" in r for r in payload["health"]["reasons"])
+
+    def test_health_check_min_runs_avoids_alert_with_too_few_runs(
+        self, tmp_repo: Path
+    ) -> None:
+        # 1 failure but min_runs=5 -> healthy (insufficient sample).
+        append_run_history(
+            tmp_repo,
+            _record(scanned=1, processed=1, succeeded=0, failed=1),
+        )
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "status", "--repo", str(tmp_repo),
+                "--health-check", "--min-runs", "5",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "HEALTHY" in result.stdout
