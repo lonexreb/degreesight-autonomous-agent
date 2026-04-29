@@ -19,6 +19,8 @@ from morningstar.engine import (
     fetch_prd,
     generate_tasks,
     process_queue,
+    read_run_history,
+    read_weekly_spend,
     slack_post,
     validate_bot_token,
     validate_model,
@@ -458,6 +460,129 @@ def process_queue_cmd(
 
     if result.failed > 0 and result.succeeded == 0:
         raise typer.Exit(1)
+
+
+@app.command()
+def status(
+    repo: Path = typer.Option(
+        Path("."),
+        "--repo",
+        "-r",
+        help="Target repository (the one MorningStar processes).",
+        exists=True,
+        dir_okay=True,
+        file_okay=False,
+        resolve_path=True,
+    ),
+    limit: int = typer.Option(
+        10,
+        "--limit",
+        "-n",
+        min=1,
+        max=100,
+        help="Number of recent runs to display.",
+    ),
+    weekly_budget: float = typer.Option(
+        200.0,
+        "--weekly-budget",
+        envvar="MORNINGSTAR_WEEKLY_BUDGET",
+        min=0.01,
+        help="Weekly budget for the spend bar (only used when no run history exists).",
+    ),
+) -> None:
+    """Show queue health: weekly spend, recent runs, last PRs opened."""
+    print_banner(console)
+
+    week_key, spend_so_far = read_weekly_spend(repo)
+    history = read_run_history(repo, limit=limit)
+
+    # Prefer the budget from the most recent run record so the bar reflects
+    # what actually constrained the system, not the CLI default.
+    budget = history[-1].weekly_budget if history else weekly_budget
+    pct = min(100.0, (spend_so_far / budget) * 100.0) if budget > 0 else 0.0
+    bar_width = 30
+    filled = int(round(bar_width * pct / 100.0))
+    bar = "█" * filled + "░" * (bar_width - filled)
+    bar_color = "green" if pct < 60 else "yellow" if pct < 90 else "red"
+
+    spend_panel = Panel.fit(
+        f"[bold]Week[/bold] {week_key}\n"
+        f"[{bar_color}]{bar}[/{bar_color}] {pct:5.1f}%\n"
+        f"[bold]${spend_so_far:.2f}[/bold] / ${budget:.2f}",
+        title="Weekly spend",
+        border_style="bright_yellow",
+    )
+    console.print(spend_panel)
+
+    if not history:
+        console.print(
+            "[dim]No run history yet. "
+            "Run [bold]morningstar process-queue[/bold] to start.[/dim]"
+        )
+        return
+
+    runs_table = Table(
+        title=f"Recent runs (last {len(history)})",
+        border_style="bright_yellow",
+        show_lines=False,
+    )
+    runs_table.add_column("Time (UTC)", style="dim", no_wrap=True)
+    runs_table.add_column("Scanned", justify="right")
+    runs_table.add_column("OK", justify="right", style="green")
+    runs_table.add_column("Fail", justify="right", style="red")
+    runs_table.add_column("Skip", justify="right", style="cyan")
+    runs_table.add_column("Cost", justify="right", style="yellow")
+    runs_table.add_column("Mode", justify="center")
+
+    for rec in reversed(history):
+        runs_table.add_row(
+            rec.timestamp.replace("+00:00", "Z"),
+            str(rec.scanned),
+            str(rec.succeeded),
+            str(rec.failed),
+            str(rec.skipped),
+            f"${rec.total_cost:.2f}",
+            "dry" if rec.dry_run else "live",
+        )
+    console.print(runs_table)
+
+    # Aggregate health stats over the displayed window.
+    total_processed = sum(r.processed for r in history)
+    total_succeeded = sum(r.succeeded for r in history)
+    total_failed = sum(r.failed for r in history)
+    total_cost = sum(r.total_cost for r in history)
+    success_rate = (
+        (total_succeeded / total_processed) * 100.0 if total_processed else 0.0
+    )
+
+    health_color = (
+        "green" if success_rate >= 80 or total_processed == 0
+        else "yellow" if success_rate >= 50
+        else "red"
+    )
+    summary = Table(border_style="bright_blue", show_header=False)
+    summary.add_column("Metric", style="dim")
+    summary.add_column("Value", style="bold")
+    summary.add_row("Window", f"{len(history)} run(s)")
+    summary.add_row("Items processed", str(total_processed))
+    summary.add_row(
+        "Success rate", f"[{health_color}]{success_rate:.1f}%[/{health_color}]"
+    )
+    summary.add_row("Items failed", f"[red]{total_failed}[/red]")
+    summary.add_row("Total cost (window)", f"${total_cost:.2f}")
+    console.print(summary)
+
+    recent_prs = [pr for rec in reversed(history) for pr in rec.prs_opened][:10]
+    if recent_prs:
+        prs_table = Table(
+            title="Recent PRs (most recent first)",
+            border_style="bright_green",
+            show_header=False,
+        )
+        prs_table.add_column("URL", style="cyan")
+        for pr in recent_prs:
+            prs_table.add_row(pr)
+        console.print(prs_table)
 
 
 def main() -> None:
