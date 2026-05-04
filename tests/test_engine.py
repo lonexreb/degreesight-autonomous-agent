@@ -475,15 +475,17 @@ class TestGitCommit:
             subprocess.CompletedProcess(args=[], returncode=0, stdout="M file.py\n", stderr=""),
             # git add
             subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            # git diff --cached --name-only (something staged)
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="file.py\n", stderr=""),
             # git commit
             subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
         ]
 
         _git_commit(tmp_repo, "my feature", "task-1")
-        assert mock_run.call_count == 3
+        assert mock_run.call_count == 4
 
         # Check commit message
-        commit_cmd = mock_run.call_args_list[2][0][0]
+        commit_cmd = mock_run.call_args_list[3][0][0]
         assert "feat: my feature" in commit_cmd[-1]
         assert "MorningStar" in commit_cmd[-1]
 
@@ -492,6 +494,7 @@ class TestGitCommit:
         mock_run.side_effect = [
             subprocess.CompletedProcess(args=[], returncode=0, stdout="M file.py\n", stderr=""),
             subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="file.py\n", stderr=""),
             subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
         ]
 
@@ -502,6 +505,57 @@ class TestGitCommit:
         assert ":!*.pem" in add_cmd
         assert ":!*.key" in add_cmd
         assert ":!.agent-logs" in add_cmd
+
+    @patch("morningstar.engine.subprocess.run")
+    def test_tolerates_add_warning_when_index_has_changes(
+        self, mock_run: MagicMock, tmp_repo: Path,
+    ) -> None:
+        """git add can return rc!=0 with a benign 'paths are ignored by
+        .gitignore' warning when an exclude pathspec matches a gitignored
+        directory (e.g. .agent-logs/). The commit should still proceed
+        if anything is actually staged."""
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="M file.py\n", stderr=""),
+            # git add returns nonzero with the benign warning
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="",
+                stderr=b"The following paths are ignored by one of your "
+                       b".gitignore files:\n.agent-logs\nhint: Use -f if "
+                       b"you really want to add them.\n",
+            ),
+            # but the index still has the README change staged
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="file.py\n", stderr=""),
+            # commit succeeds
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+        ]
+
+        _git_commit(tmp_repo, "fix", "task-1")
+        assert mock_run.call_count == 4
+        # Confirm we reached the commit step
+        commit_cmd = mock_run.call_args_list[3][0][0]
+        assert commit_cmd[:2] == ["git", "commit"]
+
+    @patch("morningstar.engine.subprocess.run")
+    def test_skips_commit_when_nothing_actually_staged(
+        self, mock_run: MagicMock, tmp_repo: Path,
+    ) -> None:
+        """If git add genuinely fails to stage anything, don't try to
+        commit — that just produces a confusing 'nothing to commit'
+        error. Skip cleanly."""
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="M file.py\n", stderr=""),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="",
+                stderr=b"The following paths are ignored by one of your "
+                       b".gitignore files:\n.agent-logs\n",
+            ),
+            # nothing staged
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+        ]
+
+        _git_commit(tmp_repo, "fix", "task-1")
+        # status, add, diff-cached -> 3 calls. No commit attempted.
+        assert mock_run.call_count == 3
 
     @patch("morningstar.engine.subprocess.run")
     def test_handles_git_not_found(self, mock_run: MagicMock, tmp_repo: Path) -> None:
