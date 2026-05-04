@@ -33,6 +33,13 @@ Give it a Notion page (or a Jira ticket) and a target repo. It reads the require
 
 ---
 
+## Recent changes
+
+- **#41** — `set_jira_status` accepts a list of fallback transition names, trying each in order until one matches.
+- **#39** — `pending_status` is now configurable and `statusCategory` can be overridden for Jira queues that use non-standard workflow names.
+
+---
+
 ## Install
 
 ### As a Claude Code Plugin (recommended)
