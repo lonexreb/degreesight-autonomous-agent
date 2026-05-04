@@ -171,9 +171,9 @@ class TestSetNotionStatus:
 
 
 class TestFetchPendingJira:
-    @patch("morningstar.engine.httpx.get")
-    def test_extracts_notion_url_from_description(self, mock_get: MagicMock) -> None:
-        mock_get.return_value = MagicMock(
+    @patch("morningstar.engine.httpx.post")
+    def test_extracts_notion_url_from_description(self, mock_post: MagicMock) -> None:
+        mock_post.return_value = MagicMock(
             json=lambda: {
                 "issues": [
                     {
@@ -186,7 +186,7 @@ class TestFetchPendingJira:
                 ]
             }
         )
-        mock_get.return_value.raise_for_status = lambda: None
+        mock_post.return_value.raise_for_status = lambda: None
 
         items = fetch_pending_jira(
             "https://x.atlassian.net", "ABC",
@@ -196,10 +196,19 @@ class TestFetchPendingJira:
         assert items[0].source == "jira"
         assert items[0].source_id == "ABC-42"
         assert items[0].prd_url == "https://notion.so/login-spec-abc"
+        # Verify the new endpoint + JSON body shape (Jira deprecated
+        # GET /rest/api/3/search on 2025-08-01).
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+        assert "/rest/api/3/search/jql" in call_args[0][0]
+        body = call_args[1]["json"]
+        assert "jql" in body
+        assert body["fields"] == ["summary", "description"]
+        assert body["maxResults"] == 50
 
-    @patch("morningstar.engine.httpx.get")
-    def test_falls_back_to_inline_description(self, mock_get: MagicMock) -> None:
-        mock_get.return_value = MagicMock(
+    @patch("morningstar.engine.httpx.post")
+    def test_falls_back_to_inline_description(self, mock_post: MagicMock) -> None:
+        mock_post.return_value = MagicMock(
             json=lambda: {
                 "issues": [
                     {
@@ -212,7 +221,7 @@ class TestFetchPendingJira:
                 ]
             }
         )
-        mock_get.return_value.raise_for_status = lambda: None
+        mock_post.return_value.raise_for_status = lambda: None
 
         items = fetch_pending_jira(
             "https://x.atlassian.net", "ABC",

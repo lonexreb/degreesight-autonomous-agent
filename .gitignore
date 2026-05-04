@@ -21,3 +21,7 @@ htmlcov/
 *.key
 *.p12
 credentials.json
+# CocoIndex Code (ccc)
+/.cocoindex_code/
+# Local run artifacts
+/.morningstar/
