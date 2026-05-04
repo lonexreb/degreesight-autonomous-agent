@@ -230,6 +230,53 @@ class TestFetchPendingJira:
         assert items[0].prd_url == ""
         assert "No URL here" in items[0].inline_prd_text
 
+    @patch("morningstar.engine.httpx.post")
+    def test_pending_status_default_uses_status_clause(
+        self, mock_post: MagicMock,
+    ) -> None:
+        """Default behavior: JQL filters by exact status name 'To Do'."""
+        mock_post.return_value = MagicMock(json=lambda: {"issues": []})
+        mock_post.return_value.raise_for_status = lambda: None
+
+        fetch_pending_jira(
+            "https://x.atlassian.net", "ABC", "me@x.com", "token",
+        )
+        body = mock_post.call_args[1]["json"]
+        assert 'status = "To Do"' in body["jql"]
+        assert "statusCategory" not in body["jql"]
+
+    @patch("morningstar.engine.httpx.post")
+    def test_pending_status_override(self, mock_post: MagicMock) -> None:
+        """Caller can override exact status name (e.g. 'Backlog')."""
+        mock_post.return_value = MagicMock(json=lambda: {"issues": []})
+        mock_post.return_value.raise_for_status = lambda: None
+
+        fetch_pending_jira(
+            "https://x.atlassian.net", "ABC", "me@x.com", "token",
+            pending_status="Backlog",
+        )
+        body = mock_post.call_args[1]["json"]
+        assert 'status = "Backlog"' in body["jql"]
+
+    @patch("morningstar.engine.httpx.post")
+    def test_pending_status_category_takes_precedence(
+        self, mock_post: MagicMock,
+    ) -> None:
+        """When pending_status_category is set, JQL uses statusCategory and
+        ignores pending_status — covers cross-workflow projects (where
+        'pending' status names vary)."""
+        mock_post.return_value = MagicMock(json=lambda: {"issues": []})
+        mock_post.return_value.raise_for_status = lambda: None
+
+        fetch_pending_jira(
+            "https://x.atlassian.net", "ABC", "me@x.com", "token",
+            pending_status="ignored-when-category-set",
+            pending_status_category="new",
+        )
+        body = mock_post.call_args[1]["json"]
+        assert 'statusCategory = "new"' in body["jql"]
+        assert "ignored-when-category-set" not in body["jql"]
+
 
 class TestSetJiraStatus:
     @patch("morningstar.engine.httpx.post")
