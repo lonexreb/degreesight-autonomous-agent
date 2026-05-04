@@ -816,11 +816,19 @@ def fetch_pending_jira(
         f'project = {project_key} AND labels = "{label}" '
         f'AND status = "{pending_status}"'
     )
+    # Atlassian removed GET /rest/api/3/search on 2025-08-01 (returns 410
+    # Gone). Use POST /rest/api/3/search/jql with a JSON body and a list
+    # of fields. See:
+    # https://developer.atlassian.com/cloud/jira/platform/changelog/#CHANGE-2046
     try:
-        resp = httpx.get(
-            f"{base_url}/rest/api/3/search",
+        resp = httpx.post(
+            f"{base_url}/rest/api/3/search/jql",
             auth=(email, token),
-            params={"jql": jql, "maxResults": 50, "fields": "summary,description"},
+            json={
+                "jql": jql,
+                "maxResults": 50,
+                "fields": ["summary", "description"],
+            },
             timeout=15,
         )
         resp.raise_for_status()
