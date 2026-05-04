@@ -864,10 +864,28 @@ def set_jira_status(
     issue_key: str,
     email: str,
     token: str,
-    transition_name: str,
+    transition_name: str | list[str],
 ) -> bool:
-    """Transition a Jira ticket by transition name (e.g. 'In Progress', 'Done')."""
+    """Transition a Jira ticket by transition name.
+
+    `transition_name` may be a single name (e.g. ``"Done"``) or a list of
+    candidate names tried in order (e.g. ``["Running", "In Progress",
+    "Selected for Development"]``). The first match against the ticket's
+    available transitions wins; later candidates are only checked if
+    earlier ones don't exist on the workflow. Returns False if none
+    match.
+
+    The list form makes the queue resilient to workflow naming
+    differences across Jira projects: the default Jira workflow has
+    "In Progress" while many teams use "Running", "Active", or
+    "Selected for Development" for the same intent.
+    """
     base_url = validate_jira_url(base_url)
+    candidates = (
+        [transition_name] if isinstance(transition_name, str) else list(transition_name)
+    )
+    if not candidates:
+        return False
 
     try:
         list_resp = httpx.get(
@@ -876,13 +894,20 @@ def set_jira_status(
             timeout=15,
         )
         list_resp.raise_for_status()
+        available = {
+            tr.get("name", "").lower(): tr.get("id")
+            for tr in list_resp.json().get("transitions", [])
+        }
         wanted = None
-        for tr in list_resp.json().get("transitions", []):
-            if tr.get("name", "").lower() == transition_name.lower():
-                wanted = tr.get("id")
+        for cand in candidates:
+            if cand.lower() in available:
+                wanted = available[cand.lower()]
                 break
         if not wanted:
-            logger.warning("Jira transition '%s' not available for %s", transition_name, issue_key)
+            logger.warning(
+                "Jira transition not available for %s (tried %s; available: %s)",
+                issue_key, candidates, sorted(available.keys()),
+            )
             return False
 
         resp = httpx.post(
@@ -1163,10 +1188,23 @@ def _mark_item(
             pr_url=pr_url, notes=notes,
         )
     elif item.source == "jira" and cfg.jira_url and cfg.jira_email and cfg.jira_token:
+        # Map our internal status intent to a list of Jira transition
+        # names to try in order. Default Jira workflow uses "In Progress"
+        # / "Done" / "Won't Do"; many teams rename or extend these (TEST1
+        # uses "Selected for Development"; some use "Active", "Running",
+        # "Closed", "Resolved", "Failed", "Blocked"). First match wins.
+        _JIRA_TRANSITION_FALLBACKS = {
+            "Running": ["Running", "In Progress", "Active",
+                        "Selected for Development", "Start Progress"],
+            "Done": ["Done", "Closed", "Resolved", "Complete", "Completed"],
+            "Failed": ["Failed", "Blocked", "Won't Do", "Cancelled",
+                       "Wont Do", "Won't Fix"],
+        }
+        candidates = _JIRA_TRANSITION_FALLBACKS.get(status, [status])
         set_jira_status(
             cfg.jira_url, item.source_id,
             cfg.jira_email, cfg.jira_token,
-            status,
+            candidates,
         )
 
 

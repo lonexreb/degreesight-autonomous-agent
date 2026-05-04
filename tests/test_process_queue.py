@@ -256,6 +256,53 @@ class TestSetJiraStatus:
         assert ok is True
         assert mock_post.call_args.kwargs["json"]["transition"]["id"] == "41"
 
+    @patch("morningstar.engine.httpx.post")
+    @patch("morningstar.engine.httpx.get")
+    def test_accepts_list_of_candidate_names(
+        self, mock_get: MagicMock, mock_post: MagicMock,
+    ) -> None:
+        """List form: try each in order, first available wins."""
+        mock_get.return_value = MagicMock(
+            json=lambda: {
+                "transitions": [
+                    {"id": "21", "name": "Selected for Development"},
+                    {"id": "41", "name": "Done"},
+                ],
+            },
+        )
+        mock_get.return_value.raise_for_status = lambda: None
+        mock_post.return_value = MagicMock(status_code=204)
+        mock_post.return_value.raise_for_status = lambda: None
+
+        ok = set_jira_status(
+            "https://x.atlassian.net", "ABC-1",
+            "me@x.com", "token",
+            ["Running", "In Progress", "Selected for Development"],
+        )
+        assert ok is True
+        # Skipped Running + In Progress (not on workflow); landed on
+        # Selected for Development.
+        assert mock_post.call_args.kwargs["json"]["transition"]["id"] == "21"
+
+    @patch("morningstar.engine.httpx.post")
+    @patch("morningstar.engine.httpx.get")
+    def test_returns_false_when_no_candidate_matches(
+        self, mock_get: MagicMock, mock_post: MagicMock,
+    ) -> None:
+        mock_get.return_value = MagicMock(
+            json=lambda: {"transitions": [{"id": "41", "name": "Done"}]},
+        )
+        mock_get.return_value.raise_for_status = lambda: None
+
+        ok = set_jira_status(
+            "https://x.atlassian.net", "ABC-1",
+            "me@x.com", "token",
+            ["Running", "Active"],
+        )
+        assert ok is False
+        # POST should not have been called at all.
+        assert not mock_post.called
+
 
 # ── Weekly budget ─────────────────────────────────────────────
 
