@@ -376,6 +376,22 @@ def process_queue_cmd(
         "", "--jira-project", envvar="MORNINGSTAR_JIRA_PROJECT_KEY"
     ),
     jira_label: str = typer.Option("morningstar", "--jira-label"),
+    jira_pending_status: str = typer.Option(
+        "To Do", "--jira-pending-status",
+        envvar="MORNINGSTAR_JIRA_PENDING_STATUS",
+        help="Exact Jira status name treated as 'pending'. Default 'To Do' "
+        "matches a default Jira workflow; for projects with renamed statuses "
+        "(e.g. 'Backlog', 'Selected for Development'), set this OR use "
+        "--jira-pending-status-category for cross-workflow portability.",
+    ),
+    jira_pending_status_category: str = typer.Option(
+        "", "--jira-pending-status-category",
+        envvar="MORNINGSTAR_JIRA_PENDING_STATUS_CATEGORY",
+        help="Jira statusCategory key (one of: 'new', 'indeterminate', "
+        "'done'). When set, takes precedence over --jira-pending-status. "
+        "'new' matches every workflow's pending-style states (To Do, Backlog, "
+        "Selected for Development, etc.) — recommended for cross-project use.",
+    ),
     gh_repo: str = typer.Option("", "--gh-repo", envvar="MORNINGSTAR_GH_REPO"),
     base_branch: str = typer.Option("main", "--base-branch"),
     slack_webhook: str = typer.Option(
@@ -438,6 +454,8 @@ def process_queue_cmd(
         jira_token=jira_token,
         jira_project_key=jira_project_key,
         jira_label=jira_label,
+        jira_pending_status=jira_pending_status,
+        jira_pending_status_category=jira_pending_status_category,
         gh_repo=gh_repo,
         base_branch=base_branch,
         slack_webhook=slack_webhook,

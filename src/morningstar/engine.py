@@ -807,14 +807,27 @@ def fetch_pending_jira(
     *,
     label: str = "morningstar",
     pending_status: str = "To Do",
+    pending_status_category: str = "",
 ) -> list[PendingItem]:
-    """Query Jira for tickets with the given label in Pending status."""
+    """Query Jira for tickets with the given label in Pending status.
+
+    Status filter: ``pending_status_category`` (when truthy) generates a JQL
+    ``statusCategory = "<value>"`` clause, which matches across Jira
+    workflows that rename "To Do" to "Backlog", "Selected for Development",
+    etc. — Atlassian guarantees three category keys (``new``,
+    ``indeterminate``, ``done``) that every workflow maps to. Otherwise the
+    legacy exact ``status = "<pending_status>"`` clause is used.
+    """
     base_url = validate_jira_url(base_url)
     validate_jira_project_key(project_key)
 
+    if pending_status_category:
+        status_clause = f'statusCategory = "{pending_status_category}"'
+    else:
+        status_clause = f'status = "{pending_status}"'
     jql = (
         f'project = {project_key} AND labels = "{label}" '
-        f'AND status = "{pending_status}"'
+        f'AND {status_clause}'
     )
     # Atlassian removed GET /rest/api/3/search on 2025-08-01 (returns 410
     # Gone). Use POST /rest/api/3/search/jql with a JSON body and a list
@@ -1104,6 +1117,11 @@ class QueueConfig:
     jira_token: str = ""
     jira_project_key: str = ""
     jira_label: str = "morningstar"
+    jira_pending_status: str = "To Do"  # exact Jira status name to scan; or...
+    jira_pending_status_category: str = ""  # ...statusCategory key (e.g. "new"),
+    # which matches across Jira workflows that rename "To Do" to "Backlog",
+    # "Selected for Development", etc. When set, takes precedence over
+    # jira_pending_status. Standard categories: "new", "indeterminate", "done".
     # Delivery
     gh_repo: str = ""  # owner/name -- for PR creation
     base_branch: str = "main"
@@ -1179,6 +1197,8 @@ def _gather_pending(cfg: QueueConfig) -> list[PendingItem]:
             cfg.jira_url, cfg.jira_project_key,
             cfg.jira_email, cfg.jira_token,
             label=cfg.jira_label,
+            pending_status=cfg.jira_pending_status,
+            pending_status_category=cfg.jira_pending_status_category,
         ))
     return items
 
