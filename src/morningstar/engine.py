@@ -601,8 +601,32 @@ def _git_commit(repo_path: Path, title: str, task_id: str) -> None:
             capture_output=True,
             timeout=30,
         )
+        # `git add` can return a nonzero status with a benign "paths are
+        # ignored by .gitignore" warning when an exclude pathspec matches
+        # a gitignored path (e.g. `.agent-logs/` is both pathspec-excluded
+        # AND gitignored). The warning is informational; the gating
+        # signal we actually care about is whether anything ended up
+        # staged. So instead of bailing on the warning, treat it as
+        # debug-level and consult the index directly below.
         if add_result.returncode != 0:
-            logger.warning("git add failed: %s", add_result.stderr)
+            logger.debug("git add stderr (treated as informational): %s",
+                         add_result.stderr)
+
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if not staged.stdout.strip():
+            stderr_text = add_result.stderr.decode(errors="replace") if isinstance(
+                add_result.stderr, bytes) else (add_result.stderr or "")
+            logger.warning(
+                "git add produced no staged changes; skipping commit. "
+                "stderr from add: %s",
+                stderr_text,
+            )
             return
 
         commit_result = subprocess.run(
